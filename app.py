@@ -40,6 +40,17 @@ def _boolean_latex(formula: str) -> str:
     return text
 
 
+def _gs_object_latex(
+    first: ConditionalEvent, second: ConditionalEvent
+) -> str:
+    """Display the concrete five-valued gs object for the entered formulas."""
+    a = _boolean_latex(f"({first.event}) and ({first.condition})")
+    b = _boolean_latex(f"({second.event}) and ({second.condition})")
+    h = _boolean_latex(first.condition)
+    k = _boolean_latex(second.condition)
+    return rf"\left({a}\land {b}+x\,\neg({h})\land {b}+y\,{a}\land\neg({k})\right)\mid({h}\lor {k})"
+
+
 def _status_text(status: str) -> str:
     return {"T": "true", "F": "false", "V": "void"}[status]
 
@@ -198,6 +209,13 @@ def _render_result(
             "This logical object is shown even when the extension system is "
             "unsolvable; only the numerical bounds are unavailable."
         )
+    elif result.name == "gs":
+        st.markdown("**Object for the entered events**")
+        st.latex(_gs_object_latex(first, second))
+        st.caption(
+            "This five-valued object is shown even when its convex-hull system "
+            "is unsolvable."
+        )
 
     with st.expander("Constituents and numerical values", expanded=False):
         _constituent_table(result)
@@ -309,7 +327,7 @@ if st.button("Compute coherent lower and upper bounds", type="primary"):
                 st.error(f"Input error: {message}")
             if not results:
                 st.stop()
-            st.subheader("Summary of coherent extensions")
+            st.subheader("Summary of conjunction objects and coherent extensions")
             st.dataframe(
                 [
                     {
