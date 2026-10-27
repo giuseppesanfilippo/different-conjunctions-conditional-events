@@ -140,6 +140,116 @@ def _evaluate(tree: ast.AST, assignment: dict[str, bool]) -> bool:
     raise ValueError("Unsupported Boolean expression.")
 
 
+def _implicant_covers(implicant: tuple[str, ...], minterm: tuple[str, ...]) -> bool:
+    return all(symbol == "-" or symbol == value for symbol, value in zip(implicant, minterm))
+
+
+def _combine_implicants(
+    first: tuple[str, ...], second: tuple[str, ...]
+) -> tuple[str, ...] | None:
+    differences = [index for index, (left, right) in enumerate(zip(first, second)) if left != right]
+    if len(differences) != 1:
+        return None
+    index = differences[0]
+    if first[index] == "-" or second[index] == "-":
+        return None
+    combined = list(first)
+    combined[index] = "-"
+    return tuple(combined)
+
+
+def _minimal_dnf(names: tuple[str, ...], true_minterms: set[tuple[str, ...]]) -> str:
+    """Return a compact disjunctive normal form for a small Boolean function."""
+    if not true_minterms:
+        return "False"
+    total = set(product(("0", "1"), repeat=len(names)))
+    if true_minterms == total:
+        return "True"
+
+    current = set(true_minterms)
+    primes: set[tuple[str, ...]] = set()
+    while current:
+        used: set[tuple[str, ...]] = set()
+        next_round: set[tuple[str, ...]] = set()
+        ordered = sorted(current)
+        for left_index, left in enumerate(ordered):
+            for right in ordered[left_index + 1 :]:
+                combined = _combine_implicants(left, right)
+                if combined is not None:
+                    used.add(left)
+                    used.add(right)
+                    next_round.add(combined)
+        primes.update(current - used)
+        current = next_round
+
+    prime_list = sorted(primes, key=lambda item: (sum(value != "-" for value in item), item))
+    covers = {
+        implicant: {
+            minterm for minterm in true_minterms if _implicant_covers(implicant, minterm)
+        }
+        for implicant in prime_list
+    }
+    uncovered = set(true_minterms)
+    selected: list[tuple[str, ...]] = []
+    while uncovered:
+        candidate = max(
+            (implicant for implicant in prime_list if implicant not in selected),
+            key=lambda item: (len(covers[item] & uncovered), -sum(value != "-" for value in item)),
+            default=None,
+        )
+        if candidate is None:
+            break
+        selected.append(candidate)
+        uncovered -= covers[candidate]
+
+    # For the small formulas used for conjunction objects, choose the shortest
+    # exact cover. The greedy cover above is the fallback for larger tables.
+    if len(prime_list) <= 24:
+        for number in range(1, len(prime_list) + 1):
+            exact = []
+            for combination_of_primes in combinations(prime_list, number):
+                covered = set().union(*(covers[item] for item in combination_of_primes))
+                if covered == true_minterms:
+                    exact.append(combination_of_primes)
+            if exact:
+                selected = min(
+                    exact,
+                    key=lambda item: sum(sum(value != "-" for value in term) for term in item),
+                )
+                break
+
+    terms = []
+    for implicant in selected:
+        literals = [
+            name if value == "1" else f"not ({name})"
+            for name, value in zip(names, implicant)
+            if value != "-"
+        ]
+        terms.append(" and ".join(literals) if literals else "True")
+    if len(terms) == 1:
+        return terms[0]
+    return " or ".join(f"({term})" for term in terms)
+
+
+def simplify_boolean(formula: str) -> str:
+    """Simplify a Boolean formula used to display a conjunction object.
+
+    A truth-table minimisation is used for formulas with at most eight primitive
+    events. Larger user formulas are left unchanged so that simplification
+    never causes an impractical enumeration.
+    """
+    tree = _parse(formula)
+    names = tuple(sorted(_names(formula)))
+    if len(names) > 8:
+        return formula.strip() or "True"
+    true_minterms = set()
+    for values in product((False, True), repeat=len(names)):
+        assignment = dict(zip(names, values))
+        if _evaluate(tree, assignment):
+            true_minterms.add(tuple("1" if value else "0" for value in values))
+    return _minimal_dnf(names, true_minterms)
+
+
 def _parse_relation(relation: str) -> ast.AST:
     relation = relation.strip()
     implication = re.fullmatch(r"(.+?)\s+implies\s+(.+)", relation, flags=re.I)
@@ -301,7 +411,12 @@ def _target_events(
         condition = f"(({H}) or ({K}))"
     else:
         raise ValueError(f"Unknown trivalent conjunction {kind!r}.")
-    return ConditionalEvent(event, condition, 0.0, f"wedge_{kind}")
+    return ConditionalEvent(
+        simplify_boolean(event),
+        simplify_boolean(condition),
+        0.0,
+        f"wedge_{kind}",
+    )
 
 
 def _endpoint_constraints(

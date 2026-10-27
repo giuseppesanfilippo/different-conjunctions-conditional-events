@@ -14,6 +14,7 @@ from logic import (  # noqa: E402
     ConditionalEvent,
     ExtensionCycle,
     conjunction_bounds,
+    simplify_boolean,
 )
 
 
@@ -44,11 +45,27 @@ def _gs_object_latex(
     first: ConditionalEvent, second: ConditionalEvent
 ) -> str:
     """Display the concrete five-valued gs object for the entered formulas."""
-    a = _boolean_latex(f"({first.event}) and ({first.condition})")
-    b = _boolean_latex(f"({second.event}) and ({second.condition})")
-    h = _boolean_latex(first.condition)
-    k = _boolean_latex(second.condition)
-    return rf"\left({a}\land {b}+x\,\neg({h})\land {b}+y\,{a}\land\neg({k})\right)\mid({h}\lor {k})"
+    ab = simplify_boolean(
+        f"({first.event}) and ({first.condition}) and "
+        f"({second.event}) and ({second.condition})"
+    )
+    x_term = simplify_boolean(
+        f"not ({first.condition}) and ({second.event}) and ({second.condition})"
+    )
+    y_term = simplify_boolean(
+        f"({first.event}) and ({first.condition}) and not ({second.condition})"
+    )
+    condition = simplify_boolean(f"({first.condition}) or ({second.condition})")
+
+    pieces = []
+    if ab != "False":
+        pieces.append("1" if ab == "True" else _boolean_latex(ab))
+    if x_term != "False":
+        pieces.append("x" if x_term == "True" else rf"x\,{_boolean_latex(x_term)}")
+    if y_term != "False":
+        pieces.append("y" if y_term == "True" else rf"y\,{_boolean_latex(y_term)}")
+    random_quantity = "0" if not pieces else "+".join(pieces)
+    return rf"\left({random_quantity}\right)\mid {_boolean_latex(condition)}"
 
 
 def _status_text(status: str) -> str:
