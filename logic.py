@@ -656,6 +656,22 @@ def conjunction_bounds(
             error=message,
         )
 
+    if target.event == "False":
+        return BoundResult(
+            kind,
+            "z",
+            CONJUNCTIONS[kind]["formula"],
+            0.0,
+            0.0,
+            target,
+            constituents,
+            values,
+            [],
+            [],
+            "Exact value from coherence: the conjunction is the impossible event "
+            r"\(\bot\), whose prevision is 0.",
+        )
+
     lower: float | None = None
     upper: float | None = None
     lower_cycles: list[ExtensionCycle] = []

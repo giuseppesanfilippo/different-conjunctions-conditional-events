@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -34,9 +35,11 @@ def _number(value: float | None) -> str:
 def _boolean_latex(formula: str) -> str:
     """Make the Boolean syntax readable in a displayed conditional object."""
     text = formula
-    text = text.replace(" and ", r" \land ")
+    # Juxtaposition denotes event intersection in the displayed formulas.
+    text = text.replace(" and ", r"\,")
     text = text.replace(" or ", r" \lor ")
-    text = text.replace("not ", r"\neg ")
+    text = re.sub(r"not\s*\(([^()]*)\)", r"\overline{\1}", text)
+    text = re.sub(r"not\s+([A-Za-z_]\w*)", r"\overline{\1}", text)
     text = text.replace("True", r"\top").replace("False", r"\bot")
     return text
 
@@ -203,7 +206,17 @@ def _render_result(
 ) -> None:
     st.subheader(f"{result.name} — {CONJUNCTIONS[result.name]['title']}")
     st.latex(result.formula)
-    if result.lower is not None and result.upper is not None:
+    if (
+        result.target is not None
+        and result.target.event == "False"
+        and result.lower == 0.0
+        and result.upper == 0.0
+    ):
+        st.success(
+            "The conjunction is the impossible event ⊥. By coherence, its "
+            "prevision is exactly 0: lower bound = upper bound = 0."
+        )
+    elif result.lower is not None and result.upper is not None:
         st.success(
             f"Coherent interval for z: [{result.lower:.8f}, {result.upper:.8f}]"
         )
@@ -236,6 +249,13 @@ def _render_result(
 
     with st.expander("Constituents and numerical values", expanded=False):
         _constituent_table(result)
+
+    if result.target is not None and result.target.event == "False":
+        st.caption(
+            "No extension optimisation is needed: coherence fixes the "
+            "prevision of ⊥ at 0."
+        )
+        return
 
     if result.name == "gs":
         st.latex(
@@ -271,6 +291,58 @@ def _render_result(
             st.caption("No upper-bound extension cycle was available.")
 
 
+EXAMPLES = {
+    "Contraposition: A|H and not H|not A": {
+        "event_a": "A",
+        "condition_h": "H",
+        "probability_a": 0.6,
+        "event_b": "not H",
+        "condition_k": "not A",
+        "probability_b": 0.6,
+        "relations": "",
+    },
+    "Independence: A|H and A|not H": {
+        "event_a": "A",
+        "condition_h": "H",
+        "probability_a": 0.6,
+        "event_b": "A",
+        "condition_k": "not H",
+        "probability_b": 0.6,
+        "relations": "",
+    },
+    "Biconditional: A|H and H|A": {
+        "event_a": "A",
+        "condition_h": "H",
+        "probability_a": 0.6,
+        "event_b": "H",
+        "condition_k": "A",
+        "probability_b": 0.6,
+        "relations": "",
+    },
+    "Incompatible conditions: A|H and B|K": {
+        "event_a": "A",
+        "condition_h": "H",
+        "probability_a": 0.6,
+        "event_b": "B",
+        "condition_k": "K",
+        "probability_b": 0.4,
+        "relations": "not (H and K)",
+    },
+}
+
+
+for key, value in {
+    "event_a": "A",
+    "condition_h": "H",
+    "probability_a": 0.6,
+    "event_b": "B",
+    "condition_k": "K",
+    "probability_b": 0.4,
+    "relations_text": "",
+}.items():
+    st.session_state.setdefault(key, value)
+
+
 st.title("Different Conjunctions of Conditional Events")
 st.markdown(
     "This application compares four trivalent conjunctions with the "
@@ -285,27 +357,59 @@ st.markdown(
     "quantity introduced by Gilio and Sanfilippo."
 )
 
+st.subheader("Load an example")
+st.selectbox(
+    "Choose an example",
+    options=("Custom input", *EXAMPLES.keys()),
+    key="example_choice",
+)
+
+
+def _load_example() -> None:
+    selected_example = st.session_state["example_choice"]
+    if selected_example == "Custom input":
+        return
+    values = EXAMPLES[selected_example]
+    for key, value in values.items():
+        if key == "relations":
+            st.session_state["relations_text"] = value
+        else:
+            st.session_state[key] = value
+
+
+st.button("Load selected example", on_click=_load_example)
+
 st.subheader("1. Enter the two conditional events")
 left, right = st.columns(2)
 with left:
     st.markdown("**First conditional event**")
-    first_event = st.text_input("Event A", value="A")
-    first_condition = st.text_input("Condition H", value="H")
+    first_event = st.text_input("Event A", key="event_a")
+    first_condition = st.text_input("Condition H", key="condition_h")
     first_probability = st.number_input(
-        "P(A|H)", min_value=0.0, max_value=1.0, value=0.6, step=0.05, format="%.4f"
+        "P(A|H)",
+        min_value=0.0,
+        max_value=1.0,
+        step=0.05,
+        format="%.4f",
+        key="probability_a",
     )
 with right:
     st.markdown("**Second conditional event**")
-    second_event = st.text_input("Event B", value="B")
-    second_condition = st.text_input("Condition K", value="K")
+    second_event = st.text_input("Event B", key="event_b")
+    second_condition = st.text_input("Condition K", key="condition_k")
     second_probability = st.number_input(
-        "P(B|K)", min_value=0.0, max_value=1.0, value=0.4, step=0.05, format="%.4f"
+        "P(B|K)",
+        min_value=0.0,
+        max_value=1.0,
+        step=0.05,
+        format="%.4f",
+        key="probability_b",
     )
 
 st.subheader("2. Optional logical relations")
 relations_text = st.text_area(
     "One relation per line",
-    value="",
+    key="relations_text",
     help="Use and, or, not, parentheses, and optionally = True or = False.",
 )
 st.caption(
