@@ -38,8 +38,16 @@ def _boolean_latex(formula: str) -> str:
     # Juxtaposition denotes event intersection in the displayed formulas.
     text = text.replace(" and ", r"\,")
     text = text.replace(" or ", r" \lor ")
-    text = re.sub(r"not\s*\(([^()]*)\)", r"\overline{\1}", text)
-    text = re.sub(r"not\s+([A-Za-z_]\w*)", r"\overline{\1}", text)
+    text = re.sub(
+        r"not\s*\(([^()]*)\)",
+        lambda match: rf"\overline{{{match.group(1)}}}",
+        text,
+    )
+    text = re.sub(
+        r"not\s+([A-Za-z_]\w*)",
+        lambda match: rf"\overline{{{match.group(1)}}}",
+        text,
+    )
     text = text.replace("True", r"\top").replace("False", r"\bot")
     return text
 
@@ -346,6 +354,7 @@ st.markdown(
 )
 
 st.subheader("Load an example")
+st.session_state.setdefault("example_choice", "Custom input")
 st.selectbox(
     "Choose an example",
     options=("Custom input", *EXAMPLES.keys()),
