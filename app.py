@@ -30,6 +30,16 @@ def _number(value: float | None) -> str:
     return f"{value:.8f}"
 
 
+def _boolean_latex(formula: str) -> str:
+    """Make the Boolean syntax readable in a displayed conditional object."""
+    text = formula
+    text = text.replace(" and ", r" \land ")
+    text = text.replace(" or ", r" \lor ")
+    text = text.replace("not ", r"\neg ")
+    text = text.replace("True", r"\top").replace("False", r"\bot")
+    return text
+
+
 def _status_text(status: str) -> str:
     return {"T": "true", "F": "false", "V": "void"}[status]
 
@@ -165,10 +175,29 @@ def _render_result(
 ) -> None:
     st.subheader(f"{result.name} — {CONJUNCTIONS[result.name]['title']}")
     st.latex(result.formula)
-    st.success(
-        f"Coherent interval for z: [{result.lower:.8f}, {result.upper:.8f}]"
-    )
+    if result.lower is not None and result.upper is not None:
+        st.success(
+            f"Coherent interval for z: [{result.lower:.8f}, {result.upper:.8f}]"
+        )
+    else:
+        st.warning(
+            "The object is displayed below, but its coherent bounds could not "
+            "be computed from the supplied assessment."
+        )
+    if result.error:
+        st.info(f"Bounds status: {result.error}")
     st.markdown(f"**Method:** {result.method}")
+
+    if result.target is not None:
+        st.markdown("**Object for the entered events**")
+        st.latex(
+            rf"{_boolean_latex(result.target.event)}\mid"
+            rf"{_boolean_latex(result.target.condition)}"
+        )
+        st.caption(
+            "This logical object is shown even when the extension system is "
+            "unsolvable; only the numerical bounds are unavailable."
+        )
 
     with st.expander("Constituents and numerical values", expanded=False):
         _constituent_table(result)
@@ -194,6 +223,8 @@ def _render_result(
         )
         for number, cycle in enumerate(result.lower_cycles, start=1):
             _show_cycle(cycle, probabilities, number)
+        if not result.lower_cycles:
+            st.caption("No lower-bound extension cycle was available.")
     with st.expander("Extension algorithm for the upper bound z′′", expanded=False):
         st.markdown(
             "The same algorithm is applied with the endpoint z=1 and, when "
@@ -201,6 +232,8 @@ def _render_result(
         )
         for number, cycle in enumerate(result.upper_cycles, start=1):
             _show_cycle(cycle, probabilities, number)
+        if not result.upper_cycles:
+            st.caption("No upper-bound extension cycle was available.")
 
 
 st.title("Different Conjunctions of Conditional Events")
@@ -265,16 +298,25 @@ if st.button("Compute coherent lower and upper bounds", type="primary"):
         st.warning("Select at least one conjunction.")
     else:
         try:
-            results = [
-                conjunction_bounds(first, second, kind, relations) for kind in selected
-            ]
+            results = []
+            calculation_errors = []
+            for kind in selected:
+                try:
+                    results.append(conjunction_bounds(first, second, kind, relations))
+                except Exception as error:
+                    calculation_errors.append(f"{kind}: {error}")
+            for message in calculation_errors:
+                st.error(f"Input error: {message}")
+            if not results:
+                st.stop()
             st.subheader("Summary of coherent extensions")
             st.dataframe(
                 [
                     {
                         "conjunction": f"{result.name}: {CONJUNCTIONS[result.name]['title']}",
-                        "lower bound z′": result.lower,
-                        "upper bound z′′": result.upper,
+                        "lower bound z′": _number(result.lower),
+                        "upper bound z′′": _number(result.upper),
+                        "status": "available" if result.error is None else result.error,
                     }
                     for result in results
                 ],

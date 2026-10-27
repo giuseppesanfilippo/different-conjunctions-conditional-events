@@ -43,3 +43,10 @@ streamlit run app.py
 Boolean relations can be entered one per line. For example,
 `not (A and B)` expresses incompatibility and `A implies B` is interpreted as
 `A and not B = False`.
+
+If the supplied assessment is incoherent or an extension system is unsolvable,
+the app still displays every logically constructible conjunction and its
+constituents. It reports the numerical bounds as unavailable instead of
+suppressing the object. For example, if the same event is entered twice with
+incompatible probabilities, the intersection object is still shown while the
+inconsistent assessment is reported.

@@ -53,14 +53,23 @@ class BoundResult:
     name: str
     symbol: str
     formula: str
-    lower: float
-    upper: float
+    lower: float | None
+    upper: float | None
     target: ConditionalEvent | None
     constituents: tuple[Constituent, ...]
     operation_values: tuple[float, ...] | None
     lower_cycles: list[ExtensionCycle]
     upper_cycles: list[ExtensionCycle]
     method: str
+    error: str | None = None
+
+
+class ExtensionFailure(ValueError):
+    """An extension bound could not be obtained, but its construction exists."""
+
+    def __init__(self, message: str, cycles: list[ExtensionCycle]):
+        super().__init__(message)
+        self.cycles = cycles
 
 
 CONJUNCTIONS = {
@@ -401,7 +410,7 @@ def _extension_bound(
         objective = _numerator_mass(constituents, target_index)
         ok, value, _ = _solve(objective, rows, rhs, maximize=not lower)
         if not ok or value is None:
-            raise ValueError("The extension system is unsolvable.")
+            raise ExtensionFailure("The extension system is unsolvable.", cycles)
         cycles.append(
             ExtensionCycle(
                 direction,
@@ -415,7 +424,7 @@ def _extension_bound(
         )
         return value, cycles
 
-    raise ValueError("The extension algorithm did not terminate.")
+    raise ExtensionFailure("The extension algorithm did not terminate.", cycles)
 
 
 def _gs_value(statuses: tuple[str, str], x: float, y: float) -> float:
@@ -436,14 +445,43 @@ def gs_bounds(
     constituents = build_constituents((first, second), relations)
     if not constituents:
         raise ValueError("Every constituent is C_0: both conditioning events are impossible.")
-    rows, rhs = _initial_constraints((first, second), constituents)
     values = np.asarray(
         [_gs_value(item.statuses, first.probability, second.probability) for item in constituents]
     )
+    coherent, message = initial_assessment_is_coherent((first, second), relations)
+    if not coherent:
+        return BoundResult(
+            "gs",
+            "z",
+            CONJUNCTIONS["gs"]["formula"],
+            None,
+            None,
+            None,
+            constituents,
+            tuple(float(value) for value in values),
+            [],
+            [],
+            "Direct convex-hull linear programming for the five-valued conditional random quantity.",
+            error=message,
+        )
+    rows, rhs = _initial_constraints((first, second), constituents)
     ok_lower, lower, _ = _solve(values, rows, rhs)
     ok_upper, upper, _ = _solve(values, rows, rhs, maximize=True)
     if not ok_lower or not ok_upper or lower is None or upper is None:
-        raise ValueError("The initial assessment is incoherent.")
+        return BoundResult(
+            "gs",
+            "z",
+            CONJUNCTIONS["gs"]["formula"],
+            None,
+            None,
+            None,
+            constituents,
+            tuple(float(value) for value in values),
+            [],
+            [],
+            "Direct convex-hull linear programming for the five-valued conditional random quantity.",
+            error="The convex-hull system is unsolvable.",
+        )
     lower = max(0.0, min(1.0, lower))
     upper = max(0.0, min(1.0, upper))
     cycle = ExtensionCycle(
@@ -480,23 +518,50 @@ def conjunction_bounds(
         return gs_bounds(first, second, relations)
     if kind not in {"K", "L", "B", "S"}:
         raise ValueError(f"Unknown conjunction {kind!r}.")
-    coherent, message = initial_assessment_is_coherent((first, second), relations)
-    if not coherent:
-        raise ValueError(message)
     target = _target_events(first, second, kind)
-    lower, lower_cycles = _extension_bound(
-        (first, second), target, relations, lower=True
-    )
-    upper, upper_cycles = _extension_bound(
-        (first, second), target, relations, lower=False
-    )
-    lower = max(0.0, min(1.0, lower))
-    upper = max(0.0, min(1.0, upper))
     constituents = build_constituents((first, second, target), relations)
     values = tuple(
         1.0 if item.statuses[2] == "T" else 0.0 if item.statuses[2] == "F" else np.nan
         for item in constituents
     )
+    coherent, message = initial_assessment_is_coherent((first, second), relations)
+    if not coherent:
+        return BoundResult(
+            kind,
+            "z",
+            CONJUNCTIONS[kind]["formula"],
+            None,
+            None,
+            target,
+            constituents,
+            values,
+            [],
+            [],
+            "Fundamental-theorem extension algorithm for a further conditional event.",
+            error=message,
+        )
+
+    lower: float | None = None
+    upper: float | None = None
+    lower_cycles: list[ExtensionCycle] = []
+    upper_cycles: list[ExtensionCycle] = []
+    errors: list[str] = []
+    try:
+        lower, lower_cycles = _extension_bound(
+            (first, second), target, relations, lower=True
+        )
+        lower = max(0.0, min(1.0, lower))
+    except ExtensionFailure as error:
+        lower_cycles = error.cycles
+        errors.append(f"Lower bound: {error}")
+    try:
+        upper, upper_cycles = _extension_bound(
+            (first, second), target, relations, lower=False
+        )
+        upper = max(0.0, min(1.0, upper))
+    except ExtensionFailure as error:
+        upper_cycles = error.cycles
+        errors.append(f"Upper bound: {error}")
     return BoundResult(
         kind,
         "z",
@@ -509,4 +574,5 @@ def conjunction_bounds(
         lower_cycles,
         upper_cycles,
         "Fundamental-theorem extension algorithm for a further conditional event.",
+        error=" ".join(errors) if errors else None,
     )
