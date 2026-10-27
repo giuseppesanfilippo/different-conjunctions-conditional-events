@@ -3,6 +3,8 @@
 An English Streamlit application for comparing several conjunctions of two
 conditional events (A|H) and (B|K).
 
+Try the application online on [Streamlit](https://te5nmvgvcqhphak4vbxsvh.streamlit.app/).
+
 For a precise assessment
 
 \[
