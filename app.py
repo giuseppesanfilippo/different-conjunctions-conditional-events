@@ -331,18 +331,6 @@ EXAMPLES = {
 }
 
 
-for key, value in {
-    "event_a": "A",
-    "condition_h": "H",
-    "probability_a": 0.6,
-    "event_b": "B",
-    "condition_k": "K",
-    "probability_b": 0.4,
-    "relations_text": "",
-}.items():
-    st.session_state.setdefault(key, value)
-
-
 st.title("Different Conjunctions of Conditional Events")
 st.markdown(
     "This application compares four trivalent conjunctions with the "
@@ -363,53 +351,63 @@ st.selectbox(
     options=("Custom input", *EXAMPLES.keys()),
     key="example_choice",
 )
-
-
-def _load_example() -> None:
-    selected_example = st.session_state["example_choice"]
-    if selected_example == "Custom input":
-        return
-    values = EXAMPLES[selected_example]
-    for key, value in values.items():
-        if key == "relations":
-            st.session_state["relations_text"] = value
-        else:
-            st.session_state[key] = value
-
-
-st.button("Load selected example", on_click=_load_example)
+example_values = EXAMPLES.get(
+    st.session_state["example_choice"],
+    {
+        "event_a": "A",
+        "condition_h": "H",
+        "probability_a": 0.6,
+        "event_b": "B",
+        "condition_k": "K",
+        "probability_b": 0.4,
+        "relations": "",
+    },
+)
+st.caption("Selecting an example fills all fields below, including the probabilities.")
+widget_suffix = st.session_state["example_choice"]
 
 st.subheader("1. Enter the two conditional events")
 left, right = st.columns(2)
 with left:
     st.markdown("**First conditional event**")
-    first_event = st.text_input("Event A", key="event_a")
-    first_condition = st.text_input("Condition H", key="condition_h")
+    first_event = st.text_input(
+        "Event A", value=example_values["event_a"], key=f"event_a_{widget_suffix}"
+    )
+    first_condition = st.text_input(
+        "Condition H", value=example_values["condition_h"], key=f"condition_h_{widget_suffix}"
+    )
     first_probability = st.number_input(
         "P(A|H)",
         min_value=0.0,
         max_value=1.0,
+        value=example_values["probability_a"],
         step=0.05,
         format="%.4f",
-        key="probability_a",
+        key=f"probability_a_{widget_suffix}",
     )
 with right:
     st.markdown("**Second conditional event**")
-    second_event = st.text_input("Event B", key="event_b")
-    second_condition = st.text_input("Condition K", key="condition_k")
+    second_event = st.text_input(
+        "Event B", value=example_values["event_b"], key=f"event_b_{widget_suffix}"
+    )
+    second_condition = st.text_input(
+        "Condition K", value=example_values["condition_k"], key=f"condition_k_{widget_suffix}"
+    )
     second_probability = st.number_input(
         "P(B|K)",
         min_value=0.0,
         max_value=1.0,
+        value=example_values["probability_b"],
         step=0.05,
         format="%.4f",
-        key="probability_b",
+        key=f"probability_b_{widget_suffix}",
     )
 
 st.subheader("2. Optional logical relations")
 relations_text = st.text_area(
     "One relation per line",
-    key="relations_text",
+    value=example_values["relations"],
+    key=f"relations_{widget_suffix}",
     help="Use and, or, not, parentheses, and optionally = True or = False.",
 )
 st.caption(
